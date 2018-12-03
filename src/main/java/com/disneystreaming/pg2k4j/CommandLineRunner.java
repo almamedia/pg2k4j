@@ -135,6 +135,12 @@ public class CommandLineRunner implements
     private String kinesisEndpoint;
 
     @CommandLine.Option(
+            names = {"--disableaggregation"},
+            description = "Disable KPL aggregation."
+    )
+    private boolean disableAggregation;
+
+    @CommandLine.Option(
             names = {"--slotname"},
             description = "Slot name to use when reading Postgres changes.",
             required = false,
@@ -181,6 +187,10 @@ public class CommandLineRunner implements
                     .setKinesisPort(
                             Long.valueOf(endpointPort[endpointPort.length - 1]))
                     .setVerifyCertificate(false);
+        }
+        if (disableAggregation) {
+            logger.debug("Disabling KPL aggregation");
+            kinesisProducerConfig.setAggregationEnabled(false);
         }
         return kinesisProducerConfig;
     }
