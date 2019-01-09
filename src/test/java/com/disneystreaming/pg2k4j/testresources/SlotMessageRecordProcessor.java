@@ -13,10 +13,12 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.zip.InflaterInputStream;
 
 public class SlotMessageRecordProcessor implements IRecordProcessor {
 
@@ -67,16 +69,17 @@ public class SlotMessageRecordProcessor implements IRecordProcessor {
         final List<SlotMessage> records = new ArrayList<>();
 
         for (final Record record : processRecordsInput.getRecords()) {
-            final byte[] incomingData = record.getData().array();
-            logger.info("Marshalling Record : {}", new String(incomingData,
-                    StandardCharsets.UTF_8));
-            try {
+            try (InflaterInputStream input = new InflaterInputStream(new ByteArrayInputStream(record.getData().array()))) {
+                final byte[] incomingData = input.readAllBytes();
+
+                logger.info("Marshalling Record : {}", new String(incomingData,
+                        StandardCharsets.UTF_8));
                 try {
                     records.addAll(Arrays.asList(this.recordsReader
                             .readValue(incomingData)));
                 } catch (final JsonMappingException jme) {
                     logger.info("Found single incoming Kinesis record - "
-                           + "attempting to deserialize as a single VasRecord");
+                            + "attempting to deserialize as a single VasRecord");
 
                     records.add(this.recordReader.readValue(incomingData));
                 }
@@ -86,5 +89,4 @@ public class SlotMessageRecordProcessor implements IRecordProcessor {
         }
         return records;
     }
-
 }

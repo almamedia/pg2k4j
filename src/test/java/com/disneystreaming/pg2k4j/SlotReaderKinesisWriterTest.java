@@ -47,12 +47,14 @@ import org.postgresql.replication.LogSequenceNumber;
 import org.postgresql.replication.PGReplicationStream;
 import org.powermock.reflect.Whitebox;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.InflaterInputStream;
 
 import static junit.framework.TestCase.assertEquals;
 
@@ -247,8 +249,11 @@ public class SlotReaderKinesisWriterTest {
         Whitebox.setInternalState(SlotReaderKinesisWriter.class, "objectMapper", realObjectMapper);
         List<UserRecord> userRecords = slotReaderKinesisWriter.getUserRecords(testSlotMessage).collect(Collectors.toList());
         assertEquals(userRecords.size(), 1);
-        SlotMessage slotMessage = realObjectMapper.readValue(userRecords.get(0).getData().array(), SlotMessage.class);
-        assertEquals(slotMessage.getXid(), testSlotMessage.getXid());
+
+        try (InflaterInputStream input = new InflaterInputStream(new ByteArrayInputStream(userRecords.get(0).getData().array()))) {
+            SlotMessage slotMessage = realObjectMapper.readValue(input, SlotMessage.class);
+            assertEquals(slotMessage.getXid(), testSlotMessage.getXid());
+        }
     }
 
     @Test

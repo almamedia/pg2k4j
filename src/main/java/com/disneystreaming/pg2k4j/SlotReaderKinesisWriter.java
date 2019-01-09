@@ -30,7 +30,6 @@ import com.amazonaws.services.kinesis.producer.KinesisProducerConfiguration;
 import com.amazonaws.services.kinesis.producer.UserRecord;
 import com.amazonaws.services.kinesis.producer.UserRecordResult;
 import com.disneystreaming.pg2k4j.models.SlotMessage;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -39,6 +38,7 @@ import org.postgresql.replication.LogSequenceNumber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -47,6 +47,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import java.util.zip.DeflaterOutputStream;
 
 public class SlotReaderKinesisWriter {
 
@@ -57,6 +58,7 @@ public class SlotReaderKinesisWriter {
     private static final int randomBigIntBits = 128;
     private static final int bigIntToStringRadx = 10;
     private static final int recoveryModeSleepMillis = 5000;
+    private static final int KIBI = 1024;
 
     private final PostgresConfiguration postgresConfiguration;
     private final ReplicationConfiguration replicationConfiguration;
@@ -253,18 +255,32 @@ public class SlotReaderKinesisWriter {
     }
 
     Stream<UserRecord> getUserRecords(final SlotMessage slotMessage) throws
-            JsonProcessingException {
-        Stream<ByteBuffer> byteBuffers = Stream.of(ByteBuffer.wrap(
-                objectMapper.writeValueAsBytes(slotMessage)));
-        return byteBuffers.map(
-                byteBuffer -> {
-                    Random r = new Random();
-                    return new UserRecord(streamName, Long.toString(System
-                            .currentTimeMillis()),
-                            new BigInteger(randomBigIntBits, r)
+            IOException {
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        try (DeflaterOutputStream dos = new DeflaterOutputStream(baos)) {
+            objectMapper.writeValue(dos, slotMessage);
+
+            byte[] bytes = baos.toByteArray();
+            if (bytes.length > KIBI * KIBI) {
+                logger.error("Message too large for Kinesis. "
+                        + "Dropping message and continuing...");
+                return Stream.empty();
+            }
+
+            Stream<ByteBuffer> byteBuffers = Stream.of(ByteBuffer.wrap(
+                    bytes));
+            return byteBuffers.map(
+                    byteBuffer -> {
+                        Random r = new Random();
+                        return new UserRecord(streamName, Long.toString(System
+                                .currentTimeMillis()),
+                                new BigInteger(randomBigIntBits, r)
                                     .toString(bigIntToStringRadx), byteBuffer);
-                }
-        );
+                    }
+            );
+        }
     }
 
     FutureCallback<UserRecordResult> getCallback(final PostgresConnector
